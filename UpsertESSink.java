@@ -59,4 +59,21 @@ public class UpserESSink implements Serializable {
                         .source(element));
 
     }
+
+    // If item exists, it uses update script (append the value). If not, use index request
+    // Doesn't work if upsert and update come very close because when upsert doesn't complete, elasticsearch
+    // will try the second upsert
+    public static UpdateRequest updateRequestScript(JSONObject element) {
+        String index = "Your_ES_INDEX"
+        String type = "YOUR_ES_TYPE"
+        String docId = String.valueOf(element.get("id"));
+        Map<String, Integer> countParam = new HashMap<>();
+        countParam.put("count", Integer.parseInt(element.get("count").toString()));
+        return new UpdateRequest()
+                .index(index)
+                .type("type")
+                .id(docId)
+                .script(new Script("ctx._source.count += count", ScriptService.ScriptType.INLINE, "groovy", countParam))
+                .upsert(createIndexRequest(element));
+    }
 }
