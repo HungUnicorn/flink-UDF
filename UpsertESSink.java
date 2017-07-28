@@ -12,27 +12,38 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ES upsert requests
+ * ES upsert requests and update request by script
+ * Upsert request: join data in elasticsearch
+ * Update by script: compute new value of late data for average and sum computation for example
  *
  */
 public class UpserESSink implements Serializable {
-
     private Map<String, String> config = Maps.newHashMap();
     private String elasticsearch;
 
     public ESUpsertRequestEventCounts(String elasticsearch) {
         // Best bulk size: 5-15 MB
         // Ref: https://www.elastic.co/guide/en/elasticsearch/guide/current/bulk.html
-        config.put("bulk.flush.max.size.mb", "50");
-
+        config.put("bulk.flush.max.size.mb", "50");        
         config.put("bulk.flush.interval.ms", "10000");
         config.put("cluster.name", "YOUR_ES_NAME");
+        String clientTransportSniff = System.getenv("CLIENT_TRANSPORT_SNIFF");
+        if (clientTransportSniff == null || clientTransportSniff.isEmpty()){
+            clientTransportSniff = "true";
+        }
+        config.put("client.transport.sniff", clientTransportSniff);
+        config.put("cluster.name", Config.clusterName);
+        config.put("bulk.flush.max.size.mb", "1");
+        config.put("bulk.flush.interval.ms", "5000");
+        config.put("bulk.flush.backoff.enable", "true");
+        config.put("bulk.flush.backoff.type", "EXPONENTIAL");
+        config.put("bulk.flush.backoff.delay", "1000");
+        config.put("bulk.flush.backoff.retries", "5");
         this.elasticsearch = elasticsearch;
     }
 
     // Transport client
     public ElasticsearchSink elasticsearchSink(){
-
         List<InetSocketAddress> transports = new ArrayList<InetSocketAddress>();
         transports.add(new InetSocketAddress(this.elasticsearch, 9300));
         return new ElasticsearchSink<>(config, transports, new ElasticsearchSinkFunction<JSONObject>() {
@@ -56,13 +67,12 @@ public class UpserESSink implements Serializable {
                         .index(index)
                         .type(type)
                         .id(docId)
-                        .source(element));
+                        .source(element))
+                .retryOnConflict(Config.UPDATE_RETRY_CONFLICT);;
 
     }
 
     // If item exists, it uses update script (append the value). If not, use index request
-    // Doesn't work if upsert and update come very close because when upsert doesn't complete, elasticsearch
-    // will try the second upsert
     public static UpdateRequest updateRequestScript(JSONObject element) {
         String index = "Your_ES_INDEX"
         String type = "YOUR_ES_TYPE"
@@ -74,6 +84,7 @@ public class UpserESSink implements Serializable {
                 .type("type")
                 .id(docId)
                 .script(new Script("ctx._source.count += count", ScriptService.ScriptType.INLINE, "groovy", countParam))
-                .upsert(createIndexRequest(element));
+                .upsert(createIndexRequest(element))
+            .retryOnConflict(Config.UPDATE_RETRY_CONFLICT);;
     }
 }
