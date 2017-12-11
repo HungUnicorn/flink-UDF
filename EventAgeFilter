@@ -1,5 +1,4 @@
 import com.fasterxml.jackson.databind.JsonNode;
-import de.zalando.argo.correlation.Config;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
